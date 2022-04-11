@@ -111,7 +111,7 @@ func dataSourceBlockStorageVolumeV3Read(ctx context.Context, d *schema.ResourceD
 	}
 
 	if len(allVolumes) < 1 {
-		return diag.Errorf("Your openstack_blockstorage_volume_v3 query returned no results")
+		return nil
 	}
 
 	dataSourceBlockStorageVolumeV3Attributes(d, allVolumes[0])
