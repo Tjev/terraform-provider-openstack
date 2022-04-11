@@ -27,9 +27,7 @@ func TestAccComputeV2ServerGroup_basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckComputeV2ServerGroupExists("openstack_compute_servergroup_v2.sg_1", &sg),
 					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.#", "1"),
-					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.0", "affinity"),
+						"openstack_compute_servergroup_v2.sg_1", "policy", "affinity"),
 				),
 			},
 		},
@@ -55,9 +53,7 @@ func TestAccComputeV2ServerGroup_affinity(t *testing.T) {
 					testAccCheckComputeV2InstanceExists("openstack_compute_instance_v2.instance_1", &instance),
 					testAccCheckComputeV2InstanceInServerGroup(&instance, &sg),
 					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.#", "1"),
-					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.0", "affinity"),
+						"openstack_compute_servergroup_v2.sg_1", "policy", "affinity"),
 				),
 			},
 		},
@@ -83,9 +79,7 @@ func TestAccComputeV2ServerGroup_soft_affinity(t *testing.T) {
 					testAccCheckComputeV2InstanceExists("openstack_compute_instance_v2.instance_1", &instance),
 					testAccCheckComputeV2InstanceInServerGroup(&instance, &sg),
 					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.#", "1"),
-					resource.TestCheckResourceAttr(
-						"openstack_compute_servergroup_v2.sg_1", "policies.0", "soft-affinity"),
+						"openstack_compute_servergroup_v2.sg_1", "policy", "soft-affinity"),
 				),
 			},
 		},
@@ -162,7 +156,7 @@ func testAccCheckComputeV2InstanceInServerGroup(instance *servers.Server, sg *se
 const testAccComputeV2ServerGroupBasic = `
 resource "openstack_compute_servergroup_v2" "sg_1" {
   name = "sg_1"
-  policies = ["affinity"]
+  policy = "affinity"
 }
 `
 
@@ -170,7 +164,7 @@ func testAccComputeV2ServerGroupAffinity() string {
 	return fmt.Sprintf(`
 resource "openstack_compute_servergroup_v2" "sg_1" {
   name = "sg_1"
-  policies = ["affinity"]
+  policy = "affinity"
 }
 
 resource "openstack_compute_instance_v2" "instance_1" {
@@ -190,7 +184,7 @@ func testAccComputeV2ServerGroupSoftAffinity() string {
 	return fmt.Sprintf(`
 resource "openstack_compute_servergroup_v2" "sg_1" {
   name = "sg_1"
-  policies = ["soft-affinity"]
+  policy = "soft-affinity"
 }
 
 resource "openstack_compute_instance_v2" "instance_1" {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/servergroups"
 )
@@ -34,11 +35,28 @@ func resourceComputeServerGroupV2() *schema.Resource {
 				Required: true,
 			},
 
-			"policies": {
+			"policy": {
+				Type:     schema.TypeString,
+				ForceNew: true,
+				Required: true,
+			},
+
+			"rules": {
 				Type:     schema.TypeList,
 				Optional: true,
 				ForceNew: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"max_server_per_host": {
+							Type:         schema.TypeInt,
+							ForceNew:     true,
+							Optional:     true,
+							Default:      1,
+							ValidateFunc: validation.IntAtLeast(1),
+						},
+					},
+				},
 			},
 
 			"members": {
@@ -62,18 +80,29 @@ func resourceComputeServerGroupV2Create(ctx context.Context, d *schema.ResourceD
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2ServerGroupMinMicroversion
 
 	name := d.Get("name").(string)
 
-	rawPolicies := d.Get("policies").([]interface{})
-	policies := expandComputeServerGroupV2Policies(computeClient, rawPolicies)
+	// Add the port binding parameters if specified.
+	var rules servergroups.Rules
+	if r, ok := d.GetOk("rules"); ok {
+		rV := (r.([]interface{}))[0].(map[string]interface{})
+		rules = servergroups.Rules{
+			MaxServerPerHost: rV["max_server_per_host"].(int),
+		}
+	}
 
 	createOpts := ComputeServerGroupV2CreateOpts{
 		servergroups.CreateOpts{
-			Name:     name,
-			Policies: policies,
+			Name:   name,
+			Policy: d.Get("policy").(string),
 		},
 		MapValueSpecs(d),
+	}
+
+	if rules != (servergroups.Rules{}) {
+		createOpts.Rules = &rules
 	}
 
 	log.Printf("[DEBUG] openstack_compute_servergroup_v2 create options: %#v", createOpts)
@@ -93,6 +122,7 @@ func resourceComputeServerGroupV2Read(_ context.Context, d *schema.ResourceData,
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2ServerGroupMinMicroversion
 
 	sg, err := servergroups.Get(computeClient, d.Id()).Extract()
 	if err != nil {
@@ -102,7 +132,8 @@ func resourceComputeServerGroupV2Read(_ context.Context, d *schema.ResourceData,
 	log.Printf("[DEBUG] Retrieved openstack_compute_servergroup_v2 %s: %#v", d.Id(), sg)
 
 	d.Set("name", sg.Name)
-	d.Set("policies", sg.Policies)
+	d.Set("policy", sg.Policy)
+	d.Set("rules", sg.Rules)
 	d.Set("members", sg.Members)
 
 	d.Set("region", GetRegion(d, config))
