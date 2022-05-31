@@ -2,6 +2,7 @@ package openstack
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -36,6 +37,112 @@ func TestAccComputeV2ServerGroup_basic(t *testing.T) {
 	})
 }
 
+func TestAccComputeV2ServerGroup_basic_v1_64(t *testing.T) {
+	var sg servergroups.ServerGroup
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeV2ServerGroupV164Policy,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeV2ServerGroupExists("openstack_compute_servergroup_v2.sg_1", &sg),
+					resource.TestCheckResourceAttr(
+						"openstack_compute_servergroup_v2.sg_1", "policy", "affinity"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccComputeV2ServerGroup_v1_64_anti_affinity(t *testing.T) {
+	var sg servergroups.ServerGroup
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeV2ServerGroupV164PolicyAntiAffinity,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeV2ServerGroupExists("openstack_compute_servergroup_v2.sg_1", &sg),
+					resource.TestCheckResourceAttr(
+						"openstack_compute_servergroup_v2.sg_1", "policy", "anti-affinity"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccComputeV2ServerGroup_v1_64_with_rules(t *testing.T) {
+	var sg servergroups.ServerGroup
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeV2ServerGroupV164PolicyRules,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeV2ServerGroupExists("openstack_compute_servergroup_v2.sg_1", &sg),
+					resource.TestCheckResourceAttr(
+						"openstack_compute_servergroup_v2.sg_1", "policy", "anti-affinity"),
+					resource.TestCheckResourceAttr(
+						"openstack_compute_servergroup_v2.sg_1", "rules.max_server_per_host", "2"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccComputeV2ServerGroup_v1_64_with_invalid_rules(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccComputeV2ServerGroupV164PolicyRules,
+				ExpectError: regexp.MustCompile(`expected max_server_per_host to be at least 1, got .*`),
+			},
+		},
+	})
+}
+
+func TestAccComputeV2ServerGroup_policies_and_policy(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeV2ServerGroupV164Policy,
+				ExpectError: regexp.MustCompile(
+					"Cannot create with both \"policies\" and \"policy\" field specified"),
+			},
+		},
+	})
+}
+
 func TestAccComputeV2ServerGroup_affinity(t *testing.T) {
 	var instance servers.Server
 	var sg servergroups.ServerGroup
@@ -58,6 +165,32 @@ func TestAccComputeV2ServerGroup_affinity(t *testing.T) {
 						"openstack_compute_servergroup_v2.sg_1", "policies.#", "1"),
 					resource.TestCheckResourceAttr(
 						"openstack_compute_servergroup_v2.sg_1", "policies.0", "affinity"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccComputeV2ServerGroup_affinity_v1_64(t *testing.T) {
+	var instance servers.Server
+	var sg servergroups.ServerGroup
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckComputeV2ServerGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeV2ServerGroupAffinityV164(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeV2ServerGroupExists("openstack_compute_servergroup_v2.sg_1", &sg),
+					testAccCheckComputeV2InstanceExists("openstack_compute_instance_v2.instance_1", &instance),
+					testAccCheckComputeV2InstanceInServerGroup(&instance, &sg),
+					resource.TestCheckResourceAttr(
+						"openstack_compute_servergroup_v2.sg_1", "policy", "affinity"),
 				),
 			},
 		},
@@ -166,6 +299,36 @@ resource "openstack_compute_servergroup_v2" "sg_1" {
 }
 `
 
+const testAccComputeV2ServerGroupV164Policy = `
+resource "openstack_compute_servergroup_v2" "sg_1" {
+	name = "sg_1"
+	policy = "affinity"
+`
+
+const testAccComputeV2ServerGroupV164PolicyAntiAffinity = `
+resource "openstack_compute_servergroup_v2" "sg_1" {
+	name = "sg_1"
+	policy = "anti-affinity"
+`
+
+const testAccComputeV2ServerGroupV164PolicyRules = `
+resource "openstack_compute_servergroup_v2" "sg_1" {
+	name = "sg_1"
+	policy = "anti-affinity"
+	rules = {
+		max_server_per_host = 2
+	}
+`
+
+const testAccComputeV2ServerGroupV164InvalidPolicyRules = `
+resource "openstack_compute_servergroup_v2" "sg_1" {
+	name = "sg_1"
+	policy = "anti-affinity"
+	rules = {
+		max_server_per_host = -1
+	}
+`
+
 func testAccComputeV2ServerGroupAffinity() string {
 	return fmt.Sprintf(`
 resource "openstack_compute_servergroup_v2" "sg_1" {
@@ -191,6 +354,26 @@ func testAccComputeV2ServerGroupSoftAffinity() string {
 resource "openstack_compute_servergroup_v2" "sg_1" {
   name = "sg_1"
   policies = ["soft-affinity"]
+}
+
+resource "openstack_compute_instance_v2" "instance_1" {
+  name = "instance_1"
+  security_groups = ["default"]
+  scheduler_hints {
+    group = "${openstack_compute_servergroup_v2.sg_1.id}"
+  }
+  network {
+    uuid = "%s"
+  }
+}
+`, osNetworkID)
+}
+
+func testAccComputeV2ServerGroupAffinityV164() string {
+	return fmt.Sprintf(`
+resource "openstack_compute_servergroup_v2" "sg_1" {
+  name = "sg_1"
+  policy = "affinity"
 }
 
 resource "openstack_compute_instance_v2" "instance_1" {

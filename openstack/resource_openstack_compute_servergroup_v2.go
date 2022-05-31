@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/servergroups"
 )
@@ -41,6 +42,29 @@ func resourceComputeServerGroupV2() *schema.Resource {
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 
+			"policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
+
+			"rules": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"max_server_per_host": {
+							Type:         schema.TypeInt,
+							Optional:     true,
+							ForceNew:     true,
+							ValidateFunc: validation.IntAtLeast(1),
+						},
+					},
+				},
+			},
+
 			"members": {
 				Type:     schema.TypeList,
 				Computed: true,
@@ -68,12 +92,57 @@ func resourceComputeServerGroupV2Create(ctx context.Context, d *schema.ResourceD
 	rawPolicies := d.Get("policies").([]interface{})
 	policies := expandComputeServerGroupV2Policies(computeClient, rawPolicies)
 
-	createOpts := ComputeServerGroupV2CreateOpts{
-		servergroups.CreateOpts{
-			Name:     name,
-			Policies: policies,
-		},
-		MapValueSpecs(d),
+	policy := d.Get("policy").(string)
+	rules_v, rules_set := d.GetOk("rules")
+
+	var createOpts ComputeServerGroupV2CreateOpts
+
+	// "policies" is replaced with "policy" and optional "rules" since microversion 2.64
+	if len(policies) > 0 {
+		if policy != "" {
+			return diag.Errorf("Cannot create with both \"policies\" and \"policy\" field specified")
+		}
+		if rules_set {
+			return diag.Errorf("Cannot use \"policies\" field with \"rules\"" +
+				" - omit the \"rules\" or use \"policy\" instead")
+		}
+		createOpts = ComputeServerGroupV2CreateOpts{
+			servergroups.CreateOpts{
+				Name:     name,
+				Policies: policies,
+			},
+			MapValueSpecs(d),
+		}
+	} else {
+		computeClient.Microversion = "2.64"
+
+		if policy == "anti-affinity" && rules_set {
+			rules := rules_v.([]map[string]interface{})
+
+			var max_server_per_host int
+			if v, ok := rules[0]["max_server_per_host"]; ok {
+				max_server_per_host = v.(int)
+			}
+
+			createOpts = ComputeServerGroupV2CreateOpts{
+				servergroups.CreateOpts{
+					Name:   name,
+					Policy: policy,
+					Rules: &servergroups.Rules{
+						MaxServerPerHost: max_server_per_host,
+					},
+				},
+				MapValueSpecs(d),
+			}
+		} else {
+			createOpts = ComputeServerGroupV2CreateOpts{
+				servergroups.CreateOpts{
+					Name:   name,
+					Policy: policy,
+				},
+				MapValueSpecs(d),
+			}
+		}
 	}
 
 	log.Printf("[DEBUG] openstack_compute_servergroup_v2 create options: %#v", createOpts)
@@ -102,10 +171,25 @@ func resourceComputeServerGroupV2Read(_ context.Context, d *schema.ResourceData,
 	log.Printf("[DEBUG] Retrieved openstack_compute_servergroup_v2 %s: %#v", d.Id(), sg)
 
 	d.Set("name", sg.Name)
-	d.Set("policies", sg.Policies)
+
+	if len(sg.Policies) > 0 {
+		d.Set("policy", sg.Policies)
+	}
+
 	d.Set("members", sg.Members)
 
 	d.Set("region", GetRegion(d, config))
+
+	if sg.Policy != nil {
+		d.Set("policy", sg.Policy)
+	}
+
+	if sg.Rules != nil {
+		rules := make(map[string]interface{})
+		rules["max_server_per_host"] = sg.Rules.MaxServerPerHost
+		rules_l := []map[string]interface{}{rules}
+		d.Set("rules", rules_l)
+	}
 
 	return nil
 }
